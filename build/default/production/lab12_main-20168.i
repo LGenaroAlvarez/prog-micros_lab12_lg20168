@@ -7,7 +7,7 @@
 # 1 "C:/Program Files/Microchip/MPLABX/v6.00/packs/Microchip/PIC16Fxxx_DFP/1.3.42/xc8\\pic\\include\\language_support.h" 1 3
 # 2 "<built-in>" 2
 # 1 "lab12_main-20168.c" 2
-# 15 "lab12_main-20168.c"
+# 17 "lab12_main-20168.c"
 #pragma config FOSC = INTRC_NOCLKOUT
 #pragma config WDTE = OFF
 #pragma config PWRTE = OFF
@@ -2644,10 +2644,10 @@ extern __bank0 unsigned char __resetbits;
 extern __bank0 __bit __powerdown;
 extern __bank0 __bit __timeout;
 # 29 "C:/Program Files/Microchip/MPLABX/v6.00/packs/Microchip/PIC16Fxxx_DFP/1.3.42/xc8\\pic\\include\\xc.h" 2 3
-# 33 "lab12_main-20168.c" 2
+# 35 "lab12_main-20168.c" 2
 
 # 1 "C:\\Program Files\\Microchip\\xc8\\v2.35\\pic\\include\\c90\\stdint.h" 1 3
-# 34 "lab12_main-20168.c" 2
+# 36 "lab12_main-20168.c" 2
 
 
 
@@ -2655,10 +2655,13 @@ extern __bank0 __bit __timeout;
 
 
 uint8_t pot_in = 0;
+uint8_t adress = 0x01;
 int pic_sleep = 0;
 
 
 void setup(void);
+uint8_t EEPROM_read(uint8_t adress);
+void EEPROM_write(uint8_t adress, uint8_t data);
 
 
 void __attribute__((picinterrupt(("")))) isr(void){
@@ -2681,6 +2684,11 @@ void __attribute__((picinterrupt(("")))) isr(void){
             PORTEbits.RE0 = 1;
             __asm("sleep");
         }
+        else if (PORTBbits.RB2 == 0){
+            pic_sleep = 0;
+            PORTEbits.RE0 = 0;
+            EEPROM_write(adress, pot_in);
+        }
         INTCONbits.RBIF = 0;
     }
     return;
@@ -2697,6 +2705,7 @@ void main(void) {
                 _delay((unsigned long)((40)*(1000000/4000000.0)));
             }
         }
+        PORTD = EEPROM_read(adress);
     }
 }
 
@@ -2727,6 +2736,7 @@ void setup(void){
     INTCONbits.RBIE = 1;
     IOCBbits.IOCB0 = 1;
     IOCBbits.IOCB1 = 1;
+    IOCBbits.IOCB2 = 1;
     INTCONbits.RBIF = 0;
     PIR1bits.ADIF = 0;
     PIE1bits.ADIE = 1;
@@ -2734,9 +2744,11 @@ void setup(void){
 
     TRISBbits.TRISB0 = 1;
     TRISBbits.TRISB1 = 1;
+    TRISBbits.TRISB2 = 1;
     OPTION_REGbits.nRBPU = 0;
     WPUBbits.WPUB0 = 1;
     WPUBbits.WPUB1 = 1;
+    WPUBbits.WPUB2 = 1;
 
 
     ADCON0bits.ADCS = 0b01;
@@ -2747,4 +2759,30 @@ void setup(void){
     ADCON1bits.ADFM = 0;
     ADCON0bits.ADON = 1;
     _delay((unsigned long)((40)*(1000000/4000000.0)));
+}
+
+
+uint8_t EEPROM_read(uint8_t adress){
+    EEADR = adress;
+    EECON1bits.EEPGD = 0;
+    EECON1bits.RD = 1;
+    return EEDAT;
+}
+
+
+void EEPROM_write(uint8_t adress, uint8_t data){
+    EEADR = adress;
+    EEDAT = data;
+    EECON1bits.EEPGD = 0;
+    EECON1bits.WREN = 1;
+
+    INTCONbits.GIE = 0;
+    EECON2 = 0x55;
+    EECON2 = 0xAA;
+
+    EECON1bits.WR = 1;
+
+    EECON1bits.WREN = 0;
+    INTCONbits.RBIF = 0;
+    INTCONbits.GIE = 1;
 }

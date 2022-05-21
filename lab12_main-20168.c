@@ -1,10 +1,12 @@
 /*
  * File:   lab12_main-20168.c
  * Author: Luis Genaro Alvarez Sulecio 20168
- * 
- * Programa: lector de potenciometro con ADC a contador en PORTC y pushbuttons
- * en RB1 y RB0 para activar y desactivar el modo sleep del pic.
- * 
+ *
+ * Programa: lector de potenciometro con ADC a contador en PORTC y push buttons
+ * en RB1 y RB0 para activar y desactivar el modo sleep del pic. Push button en
+ * RB2 para guardar valor del contador del PORTC en EEPROM y despertar el pic.
+ * Valor en EEPROM se muestra continuamente.
+ *
  * Created on May 18, 2022, 4:36 AM
  */
 // PIC16F887 Configuration Bit Settings
@@ -34,36 +36,44 @@
 #include <stdint.h>
 
 //DEFINICION DE FRECUENCIA PARA DELAY
-#define _XTAL_FREQ 1000000          // FRECUENCIA PARA DELAYS (1MHz) 
+#define _XTAL_FREQ 1000000          // FRECUENCIA PARA DELAYS (1MHz)
 
 //VARIABLES GLOBALES
 uint8_t pot_in = 0;                 // VARIABLE PARA ALMACENAR VALOR DEL POT
+uint8_t adress = 0x01;              // VARIABLE CON DIRECCION DE DATOS EN EEPROM
 int pic_sleep = 0;                  // BANDERA PARA SABER SI SE ENCUENTRA EN MODO SLEEP
 
 //PROTO FUNCIONES
 void setup(void);                   // FUNCION DE SETUP
+uint8_t EEPROM_read(uint8_t adress);                // FUNCION PARA LECTURA DE LA EEPROM
+void EEPROM_write(uint8_t adress, uint8_t data);    // FUNCION PARA ESCRITURA A LA EEPROM
 
 //INTERRUPCIONES
 void __interrupt() isr(void){
-   
+
     if (PIR1bits.ADIF){             // REVISAR SI HAY INTERRUPCION DE ADC
         if (ADCON0bits.CHS == 0){   // REVISAR SI HAY INTERRUPCION EN EL CANAL 1
            pot_in = ADRESH;         // CARGAR VALOR DEL ADRESH A VARIABLE DE POTENCIOMETRO
-           PORTC = pot_in;
+           PORTC = pot_in;          // MOSTRAR VALOR DEL POTENCIOMENTRO EN PORTC
         }
         PIR1bits.ADIF = 0;          // LIMPIAR BANDERA DE INTERRUPCION DE ADC
     }
-    
+
     if (INTCONbits.RBIF){           // REVISAR SI HAY INTERRUPCION PORTB
         if (PORTBbits.RB0 == 0){    // INTERRUPCION EN RB0
             pic_sleep = 0;          // SI HUBO INTERRUPCION, APAGAR BANDERA DE SLEEP
             PORTEbits.RE0 = 0;      // LIMPIAR PIN DE LED INDICADOR DE SLEEP
         }
-        else if (PORTBbits.RB1 == 0){   // INTERRUPCION EN RB1
+        else if (PORTBbits.RB1 == 0){       // INTERRUPCION EN RB1
             pic_sleep = 1;          // ACTIVAR BANDERA DE SLEEP
             PORTEbits.RE0 = 1;      // ENCENDER PIN DE LED INDICADOR DE SLEEP
             SLEEP();                // COLOCAR AL PIC EN MODO SLEEP
-        }                   
+        }
+        else if (PORTBbits.RB2 == 0){       // INTERRUPCION EN RB2
+            pic_sleep = 0;          // LIMPIAR BANDERA DE SLEEP
+            PORTEbits.RE0 = 0;      // LIMPIAR PIN DE LED INDICADOR DE SLEEP
+            EEPROM_write(adress, pot_in);   // ESCRIBIR VALOR DEL POT A LA EEPROM
+        }
         INTCONbits.RBIF = 0;        // LIMPIAR BANDERA DE INTERRUPCION EN PORTB
     }
     return;
@@ -74,12 +84,13 @@ void main(void) {
     setup();
 
     while(1){
-        if (pic_sleep == 0){            // REVISAR SI EL PIC SE HA DORMIDO 
+        if (pic_sleep == 0){            // REVISAR SI EL PIC SE HA DORMIDO
             if (ADCON0bits.GO == 0){    // REVISAR SI SE HA INICIADO LA CONVERSION DEL ADC
                 ADCON0bits.GO = 1;      // INICIAR PROCESO DE CONVERSION
                 __delay_us(40);         // TIEMPO DE PROCESAMIENTO
             }
         }
+        PORTD = EEPROM_read(adress);    // MOSTRAR CONSTANTEMENTE VALOR DE LA EEPROM EN PORTD
     }
 }
 
@@ -93,23 +104,24 @@ void setup(void){
 
     TRISC = 0;                      // PORTC COMO SALIDA
     PORTC = 0;                      // LIMPIEZA DE PORTC
-    
+
     TRISD = 0;                      // PORTD COMO SALIDA
     PORTD = 0;                      // LIMPIEZA DE PORTD
-    
+
     TRISE = 0;                      // PORTE COMO SALIDA
     PORTE = 0;                      // LIMPIEZA DE PORTE
 
     //OSCCONFIC
     OSCCONbits.IRCF = 0b0100;       // FRECUENCIA DE OSCILADOR INTERNO (1MHz)
     OSCCONbits.SCS  = 1;            // RELOJ INTERNO
-    
+
     //CONFIG DE INTERRUPCIONES
     INTCONbits.GIE = 1;             // HABILITAR INTERRUPCIONES GLOBALES
     INTCONbits.PEIE = 1;            // HABILITAR INTERRUPCIONES EN PERIFERICOS
     INTCONbits.RBIE = 1;            // HABILITAR INTERRUPCIONES EN PORTB
     IOCBbits.IOCB0 = 1;             // HABILITAR INTERRUPCION EN CAMBIO PARA RB0
     IOCBbits.IOCB1 = 1;             // HABILITAR INTERRUPCION EN CAMBIO PARA RB1
+    IOCBbits.IOCB2 = 1;             // HABILITAR INTERRUPCION EN CAMBIO PARA RB2
     INTCONbits.RBIF = 0;            // LIMPIAR BANDERA DE INTERRUPCION EN PORTB
     PIR1bits.ADIF = 0;              // LIMPIEZA DE BANDERA DE INTERRUPCION DE ADC
     PIE1bits.ADIE = 1;              // HABILITAR INTERRUPCION DE ADC
@@ -117,10 +129,12 @@ void setup(void){
     //CONFIG PUSHBUTTONS EN PORTB
     TRISBbits.TRISB0 = 1;           // RB0 COMO INPUT
     TRISBbits.TRISB1 = 1;           // RB1 COMO INPUT
+    TRISBbits.TRISB2 = 1;           // RB2 COMO INPUT
     OPTION_REGbits.nRBPU = 0;       // HABILITAR WEAK PULLUP EN PUERTO B
     WPUBbits.WPUB0 = 1;             // HABILITAR RESISTENCIA EN RB0
     WPUBbits.WPUB1 = 1;             // HABILITAR RESISTENCIA EN RB1
-    
+    WPUBbits.WPUB2 = 1;             // HABILITAR RESISTENCIA EN RB2
+
     //ADC CONFIG
     ADCON0bits.ADCS = 0b01;         // FOSC/8
     ADCON1bits.VCFG0 = 0;           // USO DE VDD COMO VOLTAJE DE REFERENCIA INTERNO
@@ -130,4 +144,30 @@ void setup(void){
     ADCON1bits.ADFM = 0;            // FORMATO DE BITS JUSTIFICADOS A LA IZQUIERDA
     ADCON0bits.ADON = 1;            // HABILITACION DE MODULO DE ADC
     __delay_us(40);                 // TIEMPO DE LECTURA
+}
+
+// LECTURA DE LA EEPROM
+uint8_t EEPROM_read(uint8_t adress){
+    EEADR = adress;
+    EECON1bits.EEPGD = 0;           // LEIDO DE LA EEPROM
+    EECON1bits.RD = 1;              // OBTENER DATO DE LA EEPROM
+    return EEDAT;                   // REGRESAR VALOR DE LA EEPROM
+}
+
+// ESCRITURA A LA EEPROM
+void EEPROM_write(uint8_t adress, uint8_t data){
+    EEADR = adress;
+    EEDAT = data;
+    EECON1bits.EEPGD = 0;           // ESCRIBIR A LA EEPROM
+    EECON1bits.WREN = 1;            // HABILITAR ESCRITURA EN EEPROM
+
+    INTCONbits.GIE = 0;             // DESHABILITAR INTERRUPCIONES GLOBALES
+    EECON2 = 0x55;
+    EECON2 = 0xAA;
+
+    EECON1bits.WR = 1;              // INICIO DE ESCRITURA
+
+    EECON1bits.WREN = 0;            // DESHABILITAR ESCRITURA EN EEPROM
+    INTCONbits.RBIF = 0;            // LIMPIEZA DE BANDERA DE INTERRUPCIONES EN PUERTO B
+    INTCONbits.GIE = 1;             // HABILITAR INTERRUPCIONES GLOBALES
 }
